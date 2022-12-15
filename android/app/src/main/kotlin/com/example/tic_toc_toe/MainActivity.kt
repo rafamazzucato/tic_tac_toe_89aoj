@@ -90,7 +90,6 @@ class MainActivity: FlutterActivity() {
                 subscribeChannel(call.argument<String>("channel"))
                 result.success(true)
             }
-
         }
     }
 
