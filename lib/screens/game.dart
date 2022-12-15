@@ -13,6 +13,8 @@ class GameWidget extends StatefulWidget {
 }
 
 class _GameWidgetState extends State<GameWidget> {
+  static const platform = MethodChannel('game/exchange');
+
   Game? game;
   bool? minhaVez;
 
@@ -26,6 +28,31 @@ class _GameWidgetState extends State<GameWidget> {
   @override
   void initState() {
     super.initState();
+    _configureMethodChannelCallback();
+  }
+
+  _configureMethodChannelCallback() {
+    platform.setMethodCallHandler((call) async {
+      print('Platform received: $call');
+
+      final action = call.method;
+      final arguments = call.arguments.toString().replaceAll("\"", "");
+      final splitted = arguments.split("|");
+
+      if (action == "sendAction") {
+        final message = Message(
+            splitted[0], int.parse(splitted[1]), int.parse(splitted[2]));
+
+        if (message.user == (game!.creator ? "p2" : "p1")) {
+          setState(() {
+            minhaVez = true;
+            cells[message.x][message.y] = 2;
+          });
+
+          _checkWinner();
+        }
+      }
+    });
   }
 
   @override
@@ -137,11 +164,15 @@ class _GameWidgetState extends State<GameWidget> {
         ),
         onTap: () async {
           if (minhaVez == true && cells[x][y] == 0) {
-            setState(() {
-              minhaVez = false;
-              cells[x][y] = 1;
-            });
-            _checkWinner();
+            final result = await _sendAction(
+                'sendAction', {'tap': '${game!.creator ? 'p1' : 'p2'}|$x|$y'});
+            if (result) {
+              setState(() {
+                minhaVez = false;
+                cells[x][y] = 1;
+              });
+              _checkWinner();
+            }
           }
         });
   }
@@ -161,10 +192,14 @@ class _GameWidgetState extends State<GameWidget> {
               ElevatedButton(
                   onPressed: () async {
                     Navigator.pop(context);
-                    setState(() {
-                      game = Game(editingController.text, isCreator);
-                      minhaVez = isCreator;
-                    });
+                    final result = await _sendAction(
+                        'subscribe', {'channel': editingController.text});
+                    if (result) {
+                      setState(() {
+                        game = Game(editingController.text, isCreator);
+                        minhaVez = isCreator;
+                      });
+                    }
                   },
                   child: const Text("Jogar")),
               ElevatedButton(
@@ -175,6 +210,20 @@ class _GameWidgetState extends State<GameWidget> {
             ],
           );
         });
+  }
+
+  Future<bool> _sendAction(
+      String action, Map<String, dynamic> arguments) async {
+    try {
+      final result = await platform.invokeMethod(action, arguments);
+      if (result) {
+        return true;
+      }
+    } on PlatformException catch (e) {
+      print('Ocorreu erro ao enviar ação: $e');
+    }
+
+    return false;
   }
 
   _checkWinner() {
